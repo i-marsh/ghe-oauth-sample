@@ -1,0 +1,264 @@
+<html>
+
+<head>
+  <style type="text/css">
+    .box {
+      width: 600px;
+      height: 300px;
+      border: 1px solid redb;
+      padding: 2px 4px;
+      overflow-y: scroll;
+      overflow-x: auto;
+    }
+
+    .log {
+      margin-top: 8px;
+      font-family: monospace;
+    }
+
+    .hidden {
+      width: 600px;
+      margin : auto;
+      display: none;
+      visibility: hidden;
+    }
+
+    div#signin {
+        margin : auto;
+        width: 600px;
+
+      }
+    input {
+      width: 200px;
+    }
+
+    h2 {
+      margin:auto;
+    }
+  </style>
+</head>
+
+<body>
+
+  <hr>
+  <div style="width: 800px; margin:auto; text-align : left ; overflow: auto; height: 600px">
+    <button onClick="startOver()">start over</button>
+    <hr>
+    <div id="signin" class="hidden">
+      <h2>STEP 1</h2>
+    </div>
+    <div id="codeExchange" class="hidden">
+      <h2>STEP 2</h2>
+      <p>Now we have a code from the user granting signing in and authorizing the app</p>
+      <B>code:</b>
+      <div id="code">not set</div>
+      <button onClick="exchangeCodeForToken(params);">get access token</button>
+    </div>
+    <div id="apiCall" class="hidden">
+      <h2>STEP 3</h2>
+      <p>Call the API with the access_token <span id="access_token" /></p>
+      <button onclick="makeAPICall()">Call user api endpoint</button>
+      <pre><code id="api-response"></code></pre>
+    </div>
+  </div>
+<hr>
+  <div class="box" style="margin: auto">
+    <div><strong>Log:</strong></div>
+    <div class="log"></div>
+  </div>
+</body>
+<script>
+  /* OAUTH Application Credentials */
+  var YOUR_CLIENT_ID = '80de1a0c0db522ef####';
+  var YOUR_CLIENT_SECRET = '8c57a19459ece9a82419852f58bfe3cd82ad####';
+  var YOUR_REDIRECT_URI = 'https://server.local/pages/testorg/js-oauth/auth-grant.html';
+  var queryString = location.search.substring(1);
+
+  /* Parse query string to see if page request is coming from OAuth 2.0 server. */
+  var params = {};
+  var regex = /([^&=]+)=([^&]*)/g,
+    m;
+  while (m = regex.exec(queryString)) {
+    params[decodeURIComponent(m[1])] = decodeURIComponent(m[2]);
+  }
+
+
+  /*Log function to show state in div*/
+
+  function log(msg) {
+    var logElem = document.querySelector(".log");
+
+    var time = new Date();
+    var timeStr = time.toLocaleTimeString();
+    logElem.innerHTML += timeStr + ": " + msg + "<br/>";
+  }
+
+  function createSigninForm() {
+    //GitHub's OAuth 2.0 endpoint for requesting an access token
+    var oauth2Endpoint = 'https://server.local/login/oauth/authorize';
+
+    // Create element to open OAuth 2.0 endpoint in new window.
+    var form = document.createElement('form');
+    form.setAttribute('method', 'GET'); // Send as a GET request.
+    form.setAttribute('action', oauth2Endpoint);
+
+    // Parameters to pass to OAuth 2.0 endpoint.
+    var params = {
+      'client_id': YOUR_CLIENT_ID,
+      'redirect_uri': YOUR_REDIRECT_URI,
+      'scope': 'user repo',
+      'state': 'try_sample_request',
+      'response_type': 'code'
+    };
+
+    // Add form parameters as hidden input values.
+    for (var p in params) {
+      var label = document.createElement('div');
+      label.setAttribute('name', p + '_label');
+      label.innerHTML = p;
+      var input = document.createElement('input');
+      //input.setAttribute('type', 'hidden');
+      input.setAttribute('name', p);
+      input.setAttribute('value', params[p]);
+      form.appendChild(label);
+      form.appendChild(input);
+      form.appendChild(document.createElement('br'));
+    }
+
+    var submitButton = document.createElement('input');
+    submitButton.setAttribute('type', 'submit')
+    //submitButton.setAttribute('value','signin')
+    form.appendChild(submitButton);
+    // Add form to page and submit it to open the OAuth 2.0 endpoint.
+    var signin = document.getElementById('signin');
+
+    signin.appendChild(form);
+    console.log("sending request to github oauth endpoint");
+    //form.submit();
+
+  }
+
+
+
+
+
+  function displayState() {
+    var pageState = JSON.parse(localStorage.getItem('page-state'));
+    if (!pageState) {
+      pageState = {
+        "step": "signin"
+      }
+      localStorage.setItem('page-state', JSON.stringify(pageState));
+    }
+
+    document.getElementById(pageState.step).classList.toggle("hidden");
+    switch (pageState.step) {
+      case 'signin':
+        pageState.step = "codeExchange";
+        createSigninForm();
+        localStorage.setItem('page-state', JSON.stringify(pageState))
+        break;
+      case 'codeExchange':
+
+        if(!(params && params['code'])){
+          alert("don't have a code from the login ... ok to restart");
+          pageState='signin';
+          localStorage.setItem('page-state', JSON.stringify(pageState))
+          startOver();
+        }
+        //pageState.step="apiCall";
+        localStorage.setItem('page-state', JSON.stringify(pageState))
+        document.getElementById('code').innerHTML = params['code']
+        // we don't want to save the code because it is single use ..
+        // dont write this to local storage
+        log('calling auth endpoint - exchanging token');
+        break;
+      case 'apiCall':
+        // hide step 2 - not automatic because we do not refresh the page
+        document.getElementById('codeExchange').classList.toggle('hidden');
+        break;
+      default:
+        // error
+    }
+  }
+  window.onLoad = displayState();
+
+
+
+
+  /* swap the code for an access_token*/
+  /* GitHub doesn't support implicit grant flow */
+  function exchangeCodeForToken(params) {
+    log("exchanging CODE FOR TOKEN");
+    var oauth2Endpoint = 'https://server.local/login/oauth/access_token';
+    var data = new FormData();
+    data.append('client_id', YOUR_CLIENT_ID);
+    data.append('client_secret', YOUR_CLIENT_SECRET);
+    data.append('redirect_url', YOUR_REDIRECT_URI);
+    data.append('code', params['code']);
+    data.append('state', params['state']);
+
+
+    if (params['code']) {
+      var xhr = new XMLHttpRequest();
+      // note this is a POST
+      xhr.open('POST', oauth2Endpoint);
+      xhr.onreadystatechange = function(e) {
+        if (xhr.readyState == 4 &&
+          xhr.status == 200) {
+          respStr = decodeURI(xhr.responseText);
+          log(respStr);
+          rParams = {};
+          var nvps = respStr.split('&');
+          for (i = 0; i < nvps.length; i++) {
+            var temp = nvps[i].split('=');
+            rParams[temp[0]] = temp[1];
+          }
+          log("writing new access token to storage");
+          log(JSON.stringify(rParams, undefined, 2));
+          localStorage.setItem('oauth2-test-params', JSON.stringify(rParams));
+          var pageState = {
+            "step": "apiCall"
+          }
+
+          // we have an access token so set the state to api call
+          localStorage.setItem('page-state', JSON.stringify(pageState));
+          document.getElementById('access_token').innerHTML = rParams['access_token'];
+
+          if (rParams && rParams['error']) {
+            console.log(`ERROR : $rParams['error']`);
+            return;
+          }
+          displayState();
+
+        } else if (xhr.readyState == 4) {
+          console.log('There was an error processing the token, another ' +
+            'response was returned, or the token was invalid.')
+        }
+      };
+      xhr.send(data);
+    }
+  }
+
+  function makeAPICall() {
+    var access_token = JSON.parse(localStorage.getItem('oauth2-test-params')).access_token;
+    log("....making an API call");
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET',
+      'https://server.local/api/v3/user?' + 'access_token=' + access_token);
+    xhr.onreadystatechange = function(e) {
+      log(JSON.stringify(xhr.response, undefined, 2));
+      console.log(JSON.stringify(xhr.response, undefined, 2));
+      document.getElementById('api-response').innerHTML = xhr.response;
+    };
+    xhr.send(null);
+  }
+
+  function startOver() {
+    localStorage.removeItem('page-state');
+    localStorage.removeItem('oauth2-test-params');
+    window.location = YOUR_REDIRECT_URI;
+  }
+</script>
+
+</html>
